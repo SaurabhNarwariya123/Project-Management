@@ -23,17 +23,24 @@ dotenv.config();
 
 // Initialize Express
 const app = express();
-const server = createServer(app);
+const isServerless = !!process.env.VERCEL;
 
-// Socket.io setup
-const io = new Server(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
-    credentials: true,
-  },
-});
+let server = null;
+let io = null;
+
+if (!isServerless) {
+  server = createServer(app);
+
+  // Socket.io setup (not supported on Vercel serverless)
+  io = new Server(server, {
+    cors: {
+      origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+      methods: ['GET', 'POST'],
+      allowedHeaders: ['Content-Type'],
+      credentials: true,
+    },
+  });
+}
 
 // Middleware
 app.use(cors({
@@ -70,79 +77,103 @@ const ensureAdminUser = async () => {
   }
 };
 
-// Socket.io middleware for authentication
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (!token) {
-    return next(new Error('Authentication error'));
-  }
+if (io) {
+  // Socket.io middleware for authentication
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication error'));
+    }
 
-  const decoded = verifyToken(token);
-  if (!decoded) {
-    return next(new Error('Authentication error'));
-  }
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return next(new Error('Authentication error'));
+    }
 
-  socket.userId = decoded.id;
-  next();
-});
+    socket.userId = decoded.id;
+    next();
+  });
 
-// Socket.io events
-io.on('connection', (socket) => {
-  console.log(`User ${socket.userId} connected with socket ID: ${socket.id}`);
+  // Socket.io events
+  io.on('connection', (socket) => {
+    console.log(`User ${socket.userId} connected with socket ID: ${socket.id}`);
 
-  // User joined project
-  socket.on('join-project', (projectId) => {
-    socket.join(`project-${projectId}`);
-    io.to(`project-${projectId}`).emit('user-joined', {
-      userId: socket.userId,
-      timestamp: new Date(),
+    // User joined project
+    socket.on('join-project', (projectId) => {
+      socket.join(`project-${projectId}`);
+      io.to(`project-${projectId}`).emit('user-joined', {
+        userId: socket.userId,
+        timestamp: new Date(),
+      });
+    });
+
+    // User left project
+    socket.on('leave-project', (projectId) => {
+      socket.leave(`project-${projectId}`);
+      io.to(`project-${projectId}`).emit('user-left', {
+        userId: socket.userId,
+        timestamp: new Date(),
+      });
+    });
+
+    // Task created
+    socket.on('task-created', (data) => {
+      io.to(`project-${data.projectId}`).emit('task-created-notification', data);
+    });
+
+    // Task updated
+    socket.on('task-updated', (data) => {
+      io.to(`project-${data.projectId}`).emit('task-updated-notification', data);
+    });
+
+    // Task status changed
+    socket.on('task-status-changed', (data) => {
+      io.to(`project-${data.projectId}`).emit('task-status-changed-notification', data);
+    });
+
+    // Comment added
+    socket.on('comment-added', (data) => {
+      io.to(`project-${data.projectId}`).emit('comment-added-notification', data);
+    });
+
+    // User online status
+    socket.on('user-online', () => {
+      socket.broadcast.emit('user-online', { userId: socket.userId });
+    });
+
+    socket.on('user-offline', () => {
+      socket.broadcast.emit('user-offline', { userId: socket.userId });
+    });
+
+    // Disconnect
+    socket.on('disconnect', () => {
+      console.log(`User ${socket.userId} disconnected`);
+      socket.broadcast.emit('user-offline', { userId: socket.userId });
     });
   });
+}
 
-  // User left project
-  socket.on('leave-project', (projectId) => {
-    socket.leave(`project-${projectId}`);
-    io.to(`project-${projectId}`).emit('user-left', {
-      userId: socket.userId,
-      timestamp: new Date(),
-    });
-  });
+let isInitialized = false;
+const initializeApp = async () => {
+  if (isInitialized) {
+    return;
+  }
 
-  // Task created
-  socket.on('task-created', (data) => {
-    io.to(`project-${data.projectId}`).emit('task-created-notification', data);
-  });
+  await connectDB();
+  await ensureAdminUser();
+  isInitialized = true;
+};
 
-  // Task updated
-  socket.on('task-updated', (data) => {
-    io.to(`project-${data.projectId}`).emit('task-updated-notification', data);
+if (isServerless) {
+  app.use(async (req, res, next) => {
+    try {
+      await initializeApp();
+      next();
+    } catch (error) {
+      next(error);
+    }
   });
-
-  // Task status changed
-  socket.on('task-status-changed', (data) => {
-    io.to(`project-${data.projectId}`).emit('task-status-changed-notification', data);
-  });
-
-  // Comment added
-  socket.on('comment-added', (data) => {
-    io.to(`project-${data.projectId}`).emit('comment-added-notification', data);
-  });
-
-  // User online status
-  socket.on('user-online', () => {
-    socket.broadcast.emit('user-online', { userId: socket.userId });
-  });
-
-  socket.on('user-offline', () => {
-    socket.broadcast.emit('user-offline', { userId: socket.userId });
-  });
-
-  // Disconnect
-  socket.on('disconnect', () => {
-    console.log(`User ${socket.userId} disconnected`);
-    socket.broadcast.emit('user-offline', { userId: socket.userId });
-  });
-});
+}
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -165,17 +196,20 @@ app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
 });
 
-// Server startup
+// Server startup (local/dev or non-serverless)
 const PORT = process.env.PORT || 5000;
 
-const startServer = async () => {
-  await connectDB();
-  await ensureAdminUser();
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-};
+if (!isServerless) {
+  initializeApp()
+    .then(() => {
+      server.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    })
+    .catch((error) => {
+      console.error('Server startup error:', error);
+    });
+}
 
-startServer();
-
-module.exports = { app, io };
+module.exports = app;
+module.exports.io = io;
