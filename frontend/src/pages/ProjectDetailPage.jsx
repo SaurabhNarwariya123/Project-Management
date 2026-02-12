@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { LoadingSpinner, EmptyState } from '../components/States';
 import { TaskCard } from '../components/Cards';
 import { projectAPI, taskAPI } from '../services/apiService';
 import toast from 'react-hot-toast';
-import { FiPlus, FiSettings, FiUsers, FiTrash2 } from 'react-icons/fi';
+import { FiPlus, FiSettings, FiTrash2 } from 'react-icons/fi';
 import { useProjectStore } from '../context/store';
 import { useNavigate } from 'react-router-dom';
 
@@ -24,11 +24,7 @@ export const ProjectDetailPage = () => {
     status: 'Todo',
   });
 
-  useEffect(() => {
-    fetchProjectDetails();
-  }, [projectId]);
-
-  const fetchProjectDetails = async () => {
+  const fetchProjectDetails = useCallback(async () => {
     setIsLoading(true);
     try {
       const [projectRes, tasksRes] = await Promise.all([
@@ -42,13 +38,17 @@ export const ProjectDetailPage = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [projectId, setCurrentProject]);
+
+  useEffect(() => {
+    fetchProjectDetails();
+  }, [fetchProjectDetails]);
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
     try {
       const response = await taskAPI.createTask(projectId, taskFormData);
-      setTasks([response.data.task, ...tasks]);
+      setTasks((prev) => [response.data.task, ...prev]);
       setTaskFormData({ title: '', description: '', priority: 'Medium', status: 'Todo' });
       setShowTaskModal(false);
       toast.success('Task created successfully!');
@@ -61,7 +61,7 @@ export const ProjectDetailPage = () => {
     if (window.confirm('Are you sure?')) {
       try {
         await taskAPI.deleteTask(taskId);
-        setTasks(tasks.filter((t) => t._id !== taskId));
+        setTasks((prev) => prev.filter((t) => t._id !== taskId));
         toast.success('Task deleted successfully!');
       } catch (error) {
         toast.error('Failed to delete task');

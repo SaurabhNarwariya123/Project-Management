@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../context/store';
 import { authAPI } from '../services/apiService';
 import toast from 'react-hot-toast';
-import { FiMail, FiLock, FiUser } from 'react-icons/fi';
+import { FiMail, FiLock } from 'react-icons/fi';
 
 export const LoginPage = () => {
   const [formData, setFormData] = useState({ identifier: '', password: '' });
