@@ -188,6 +188,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'Server is running' });
 });
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({ status: 'OK' });
+});
+
 // Error handling middleware
 app.use(errorHandler);
 
