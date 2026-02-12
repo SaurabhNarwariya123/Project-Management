@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { LoadingSpinner } from '../components/States';
@@ -18,11 +18,7 @@ export const TaskDetailPage = () => {
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [updateData, setUpdateData] = useState({});
 
-  useEffect(() => {
-    fetchTaskDetails();
-  }, [taskId]);
-
-  const fetchTaskDetails = async () => {
+  const fetchTaskDetails = useCallback(async () => {
     setIsLoading(true);
     try {
       const [taskRes, commentsRes, activitiesRes] = await Promise.all([
@@ -39,7 +35,11 @@ export const TaskDetailPage = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [taskId]);
+
+  useEffect(() => {
+    fetchTaskDetails();
+  }, [fetchTaskDetails]);
 
   const handleAddComment = async (e) => {
     e.preventDefault();

@@ -1,15 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from '../components/Navbar';
 import { LoadingSpinner, EmptyState } from '../components/States';
 import { ProjectCard } from '../components/Cards';
 import { useProjectStore } from '../context/store';
 import { projectAPI } from '../services/apiService';
 import toast from 'react-hot-toast';
-import { FiPlus, FiSearch, FiFilter } from 'react-icons/fi';
-import { useNavigate } from 'react-router-dom';
+import { FiPlus, FiSearch } from 'react-icons/fi';
 
 export const ProjectsPage = () => {
-  const navigate = useNavigate();
   const { projects, setProjects, isLoading, setLoading } = useProjectStore();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -20,11 +18,7 @@ export const ProjectsPage = () => {
     visibility: 'Private',
   });
 
-  useEffect(() => {
-    fetchProjects();
-  }, [search, filterStatus]);
-
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
       const params = {
@@ -38,13 +32,17 @@ export const ProjectsPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterStatus, search, setLoading, setProjects]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   const handleCreateProject = async (e) => {
     e.preventDefault();
     try {
       const response = await projectAPI.createProject(formData);
-      setProjects([response.data.project, ...projects]);
+      setProjects((prev) => [response.data.project, ...prev]);
       setFormData({ name: '', description: '', visibility: 'Private' });
       setShowModal(false);
       toast.success('Project created successfully!');
@@ -57,7 +55,7 @@ export const ProjectsPage = () => {
     if (window.confirm('Are you sure you want to delete this project?')) {
       try {
         await projectAPI.deleteProject(projectId);
-        setProjects(projects.filter((p) => p._id !== projectId));
+        setProjects((prev) => prev.filter((p) => p._id !== projectId));
         toast.success('Project deleted successfully!');
       } catch (error) {
         toast.error('Failed to delete project');
